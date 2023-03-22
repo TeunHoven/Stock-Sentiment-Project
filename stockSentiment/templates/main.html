@@ -1,0 +1,171 @@
+{% extends "master.html" %}
+{% load humanize %}
+
+{% block title %}Stock sentiment{% endblock %}
+
+{% block content_center %}
+    <style>
+        a {
+            text-decoration: none;
+        }
+    </style>
+
+    <script>
+        $(function() {
+            setStockCard('all');
+        });
+
+        const csrftoken = Cookies.get('csrftoken'); // Gets the csrf token for secure handling of the requests
+
+        function generateStocks() {
+            console.log('generate');
+            request = $.ajax({
+                url: "generate/",
+                method: 'GET',
+                headers: {'X-CSRFToken': csrftoken},
+            });
+
+            request.done(function(msg) {
+                $('#last-updated').html(`Last generated: ${msg.last_updated}`)
+                $('#api-calls').html(`API Calls: ${msg.api_calls}`)
+
+                console.log('done');
+                if($('#btn-all').hasClass('active')) {
+                    setStockCard('all');
+                }
+
+                if($('#btn-pos').hasClass('active')) {
+                    setStockCard('positive');
+                }
+
+                if($('#btn-neut').hasClass('active')) {
+                    setStockCard('neutral');
+                    
+                }
+
+                if($('#btn-neg').hasClass('active')) {
+                    setStockCard('negative');
+                    
+                }
+            });
+        }
+
+        // Sentiment must be either 'all', 'positive', 'neutral' or 'negative'
+        function setStockCard(sentiment) {
+            request = $.ajax({
+                url: `${sentiment}/`,  
+                contentType: "application/json",
+                datatype: "json",
+                method: 'GET',
+                headers: {'X-CSRFToken': csrftoken},
+            });
+
+            request.done(function(msg) {
+                console.log('done');
+                console.log(msg);
+                $('#card-body').empty();
+                $.each(JSON.parse(msg), function(index, element) {
+                    var badge = '';
+                    var sentiment = '';
+                    switch(element.sentiment) {
+                        case 'positive':
+                            badge = 'success';
+                            sentiment = 'Positive';
+                            break;
+
+                        case 'neutral':
+                            badge = 'info';
+                            sentiment = 'Neutral';
+                            break;
+
+                        case 'negative':
+                            badge = 'danger';
+                            sentiment = 'Negative';
+                            break;
+                    }
+
+                    $('#card-body').append(`
+                    <div class='card'>
+                        <div class='card-body'>
+                            <div class='row align-items-center'>
+                                <p class='col-xl-5'>${element.name} (${element.ticker})</p>
+                                <div class='col-xl-4' style='text-decoration: none;'>
+                                    <a href='${element.post}' target='_blank' style='display: table-row;'>
+                                        <div class="row bi bi-reddit justify-content-center" style='font-size:2em; color: #FF5700;'></div>
+                                        <p class='row justify-content-center' style='color: #FF5700;'>Original Post</p>
+                                    </a>
+                                </div>
+                                <p class='col-xl-2'><span class="badge bg-${badge}">${sentiment}</span></p>
+                                <div class='col-xl-1'>
+                                    <a href='${element.ticker}' class='bi bi-graph-up' style='color: black; text-decoration: none;'></a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    `);
+                });
+            });
+
+            request.fail(function(msg) {
+                console.log(msg);
+            });
+        }
+
+        function categoryClicked(button) {
+            switch (button) {
+                case 'all':
+                    $('#btn-all').addClass('active');
+                    $('#btn-pos').removeClass('active');
+                    $('#btn-neut').removeClass('active');
+                    $('#btn-neg').removeClass('active');
+
+                    setStockCard('all');
+                    break;
+                case 'positive':
+                    $('#btn-all').removeClass('active');
+                    $('#btn-pos').addClass('active');
+                    $('#btn-neut').removeClass('active');
+                    $('#btn-neg').removeClass('active');
+
+                    setStockCard('positive');
+                    break;
+                case 'neutral':
+                    $('#btn-all').removeClass('active');
+                    $('#btn-pos').removeClass('active');
+                    $('#btn-neut').addClass('active');
+                    $('#btn-neg').removeClass('active');
+
+                    setStockCard('neutral');
+                    break;
+                case 'negative':
+                    $('#btn-all').removeClass('active');
+                    $('#btn-pos').removeClass('active');
+                    $('#btn-neut').removeClass('active');
+                    $('#btn-neg').addClass('active');
+
+                    setStockCard('negative');
+                    break;
+            }
+        }
+    </script>
+
+    <div class='card text-bg-light mb-3'>
+        <div class='card-header'>
+            <div class='btn-group'>
+                <button type='button' id='btn-all' onclick="categoryClicked('all')" class='btn btn-outline-dark active'>All</button>
+                <button type='button' id='btn-pos' onclick="categoryClicked('positive')" class='btn btn-outline-success'>Positive</button>
+                <button type='button' id='btn-neut' onclick="categoryClicked('neutral')" class='btn btn-outline-info'>Neutral</button>
+                <button type='button' id='btn-neg' onclick="categoryClicked('negative')" class='btn btn-outline-danger'>Negative</button>
+            </div>
+        </div>
+        <div id='card-body' class='card-body'>
+            <p id='stocks-body'>test</p>
+        </div>
+    </div>
+{% endblock %}
+
+{% block content_right %}
+    <button type='button' onclick='generateStocks()' class='btn btn-primary'>Generate stock data</button>
+    <p class='lead' id='last-updated' style='color: black; margin-bottom: 0; font-size: 1em;'>Last generated: {{ last_generated | timesince }}</p>
+    <p class='lead' id='api-calls' style='color: black; font-size: 1em;'>API Calls: {{ api_calls }}</p>
+{% endblock %}

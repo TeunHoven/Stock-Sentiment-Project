@@ -1,0 +1,216 @@
+{% extends "master.html" %}
+
+{% load humanize %}
+
+{% block title %}{{ company.name }}{% endblock %}
+
+{% block content_left %}
+<style>
+    #stock-info {
+        font-size: 1em;
+        border-bottom: 4px solid grey; 
+        border-radius: 0 0 15% 15%;
+        margin-top: 1em;
+        box-shadow: 0 10px 10px -8px rgba(0, 0, 0, 0.2);
+    }
+</style>
+
+<p class='lead' style='font-size: 1em; margin-left: 1em;'>Last updated: {{ company.lastModified | naturaltime}}</p>
+
+<div class='container text-center'>
+    <div class='row'>
+        <div class='col-xl display: table-row; '>
+            <p class='lead' id='stock-info'><strong>Previous Close:</strong> ${{ stock.close | floatformat:2 }}</p>
+        </div>
+        <div class='col-xl '>
+            <p class='lead' id='stock-info'><strong>Open:</strong> ${{ stock.open | floatformat:2 }}</p>
+        </div>
+    </div>
+    <div class='row'>
+        <div class='col-xl display: table-row; '>
+            <p class='lead' id='stock-info'><strong>High:</strong> ${{ stock.high | floatformat:2 }}</p>
+        </div>
+        <div class='col-xl '>
+            <p class='lead' id='stock-info'><strong>Low:</strong> ${{ stock.low | floatformat:2 }}</p>
+        </div>
+    </div>
+    <div class='row'>
+        <div class='col-xl display: table-row; '>
+            <p class='lead' id='stock-info'><strong>Equity:</strong> ${{ company.equity | intcomma }}</p>
+        </div>
+        <div class='col-xl '>
+            <p class='lead' id='stock-info'><strong>Return On Equity:</strong> {{ company.returnOnEquity }}</p>
+        </div>
+    </div>
+    <div class='row'>
+        <div class='col-xl display: table-row; '>
+            <p class='lead' id='stock-info'><strong>Debt:</strong> ${{ company.debt | intcomma }}</p>
+        </div>
+        <div class='col-xl '>
+            <p class='lead' id='stock-info'><strong>Beta:</strong> {{ company.beta }}</p>
+        </div>
+    </div>
+    <div class='row'>
+        <div class='col-xl display: table-row; '>
+            <p class='lead' id='stock-info'><strong>Value:</strong> ${{ company.value | intcomma }}</p>
+        </div>
+        <div class='col-xl '>
+            <p class='lead' id='stock-info'><strong>Dividend per Share:</strong> ${{ company.dividendPerShare | floatformat:2 }}</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content_center %}
+<script>
+    var days = 500;
+    var max_days = 0;
+    var ticker = "{{ company.ticker }}";
+    const csrftoken = Cookies.get('csrftoken'); // Gets the csrf token for secure handling of the requests
+
+    // Company and Graph data
+    var company_name = 'Not defined';
+    var graphTitle = company_name + ` (data for the trailing ${days} trading days)`;
+
+    // Graph data
+    var daily_adjusted_close = [];
+    var dates = [];
+    var sma_data = [];
+
+    function daysChange(value) {
+        $('#days-range-label').html(`Days (${value})`);
+    }
+
+    function graphDaysChanged(value) {
+        days = value;
+        getStockData();
+    }
+
+    function setGraph() {
+        //instruct Chart.js to plot the graph, with "dates" as the x-axis labels and "daily_adjusted_close" and "sma_data" as the y-axis values
+        $('#chart-area').remove(); // this is my <canvas> element
+        $('#graph-area').append('<canvas id="chart-area"><canvas>');
+        var ctx = document.getElementById('chart-area').getContext('2d');
+        var chartArea = new Chart(ctx, {
+            type: 'line',
+                data: {
+                    labels: dates.slice(-days),
+                    datasets: [
+                        {
+                            label: 'Daily Adjusted Close',
+                            data: daily_adjusted_close.slice(-days),
+                            backgroundColor: [
+                                'grey',
+                            ],
+                            borderColor: [
+                                'black',
+                            ],
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Simple Moving Average (SMA)',
+                            data: sma_data.slice(-days),
+                            backgroundColor: [
+                                'lightblue',
+                            ],
+                            borderColor: [
+                                'lightblue',
+                            ],
+                            borderWidth: 1
+                        },
+                    ]
+                },
+                options: {
+                    msgponsive: true,
+                    scales: {
+                        y: {
+                            //beginAtZero: false
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                        position: 'top',
+                        },
+                        title: {
+                        display: true,
+                        text: graphTitle
+                        }
+                    }
+                }
+        });
+    }
+
+    function getStockData(){
+        request = $.ajax({
+            url: "getStockData/",
+            type: "POST",
+            data: {
+               'ticker': ticker,
+            },
+            headers: {'X-CSRFToken': csrftoken},
+        });
+
+        request.done(function(input) {
+            // Empty all the arrays again
+            daily_adjusted_close = [];
+            dates = [];
+            sma_data = [];
+
+            var price_input = input['stock_data'];
+            company_name = input['name'];
+            graphTitle = company_name + ` (data for the trailing ${days} trading days)`;
+
+            price_data_parse = function(){
+                for (let key in price_input) {
+                    daily_adjusted_close.push(Number(price_input[key]['adjusted_close']));
+                    dates.push(key);
+                }
+            };
+            price_data_parse();
+
+            var sma_input = input['sma_data'];
+
+            sma_data_parse = function(){
+                for (let key in sma_input) {
+                    sma_data.push(Number(sma_input[key]));
+                }
+
+            };
+            sma_data_parse();
+
+            let max = dates.length
+            if(max > 1000) {
+                max = 1000;
+            }
+            $('#days-range').attr('max', max)
+            $('#days-range').attr('value', days)
+            daysChange(days);
+
+            // only keep the latest 500 data points (i.e., data for the latest $days$ trading days) for the three lists below
+            daily_adjusted_close.reverse().slice(days);
+            sma_data.reverse().slice(days);
+            dates.reverse().slice(days);
+
+            setGraph();
+        });
+    }
+
+    $(function() {
+        getStockData();
+    });
+</script>
+
+<h1 style='color: black;'>{{ company.name }} ({{company.ticker}})</h1>
+<p class='lead' style='font-size: 1em'>{{ company.sector }} | {{ company.industry }}</p>
+<p style='color: black;'>{{ company.description }}</p>
+
+<div class='' id='graph-area' style='height:  80%; width: 80%;'>
+    <canvas id='chart-area'></canvas>
+</div>
+{% endblock %}
+
+{% block content_right %}
+<label for='range' id='days-range-label' class='form-label'>Days</label>
+<p class='lead' style='font-size: 0.7em; margin-bottom: 0;'>Disclaimer: The graph slows down significantly above 1000!</p>
+<input type='range' class='form-range' min='1' id='days-range' onchange='graphDaysChanged(this.value)' oninput='daysChange(this.value)' style='width: 95%;'>
+{% endblock %}
